@@ -12,8 +12,12 @@ use super::Signer;
 pub const DALEK_PROVIDER_LABEL: &str = "dalek";
 
 /// Create software-backed Ed25519 signers from the given configuration
-pub fn create_signers(signers: &mut Vec<Signer>, config: DalekConfig) -> Result<(), Error> {
-    for (key_id, key_config) in config.keys {
+pub fn create_signers(signers: &mut Vec<Signer>, config: Option<DalekConfig>) -> Result<(), Error> {
+    if config.is_none() {
+        return Ok(());
+    }
+
+    for (key_id, key_config) in config.unwrap().keys {
         let mut file = File::open(&key_config.path).map_err(|e| {
             err!(
                 ConfigError,

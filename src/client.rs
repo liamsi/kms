@@ -10,7 +10,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use config::ValidatorConfig;
 use ed25519::Keyring;
+use error::Error;
 use session::Session;
 
 /// How long to wait after a crash before respawning (in seconds)
@@ -32,10 +34,10 @@ pub struct Client {
 
 impl Client {
     /// Spawn a new client, returning a handle so it can be joined
-    pub fn spawn(label: String, addr: String, port: u16, keyring: Arc<Keyring>) -> Self {
+    pub fn spawn(label: String, config: ValidatorConfig, keyring: Arc<Keyring>) -> Self {
         Self {
             label,
-            handle: thread::spawn(move || client_loop(&addr, port, keyring)),
+            handle: thread::spawn(move || client_loop(&config, &keyring)),
         }
     }
 
@@ -46,13 +48,12 @@ impl Client {
 }
 
 /// Main loop for all clients. Handles reconnecting in the event of an error
-fn client_loop(addr: &str, port: u16, keyring: Arc<Keyring>) {
-    loop {
-        let catch_unwind_result = panic::catch_unwind(|| {
-            Session::new(addr, port, Arc::clone(&keyring))?.handle_requests()
-        });
+fn client_loop(config: &ValidatorConfig, keyring: &Arc<Keyring>) {
+    let addr = &config.addr;
+    let port = config.port;
 
-        match catch_unwind_result {
+    loop {
+        match panic::catch_unwind(|| client_session(addr, port, keyring)) {
             Ok(result) => match result {
                 Ok(_) => {
                     info!("[{}:{}] session closed gracefully", addr, port);
@@ -71,7 +72,20 @@ fn client_loop(addr: &str, port: u16, keyring: Arc<Keyring>) {
             }
         }
 
+        // Break out of the loop if auto-reconnect is explicitly disabled
+        if config.reconnect.is_some() && !config.reconnect.unwrap() {
+            break;
+        }
+
         // TODO: exponential backoff?
         thread::sleep(Duration::from_secs(RESPAWN_DELAY))
+    }
+}
+
+/// Establish a session with the validator and handle incoming requests
+fn client_session(addr: &str, port: u16, keyring: &Arc<Keyring>) -> Result<(), Error> {
+    let mut session = Session::new(addr, port, Arc::clone(keyring))?;
+    loop {
+        session.handle_request()?;
     }
 }
