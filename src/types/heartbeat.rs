@@ -102,7 +102,7 @@ impl Amino for Heartbeat{
 
         length_buf.append(&mut buf);
 
-        println!("{:x?}",length_buf );
+        println!("{:?}",length_buf );
         length_buf
     }
 
